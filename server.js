@@ -236,8 +236,7 @@ const server = http.createServer(async (req, res) => {
     addLog('pass', `Пропущен: ${v.ip} · токен ${v.token}`);
     broadcast({ type: 'visitor_update', visitor: v });
     broadcast({ type: 'stats', stats: calcStats() });
-    // Auto-unlock: отправляем клиенту с этим IP команду открыть реальный сайт
-    broadcast({ type: 'auto_unlock', ip: v.ip, visitorId: v.id });
+    broadcast({ type: 'auto_unlock', ip: v.ip });
     return json(res, { ok: true, token: v.token });
   }
 
