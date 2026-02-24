@@ -1845,12 +1845,50 @@ function handleWS(msg) {
   }
 }
 
-// ── Fetch visitor's own IP ────────────────────────────────────
+// ── Fetch visitor's own IP + авто-регистрация ────────────────
 async function fetchVisitorIP() {
   try {
     const r = await fetch('https://ip-api.com/json/?fields=status,country,countryCode,regionName,city,isp,org,as,query,proxy,hosting,mobile');
     const d = await r.json();
-    if (d.status === 'success') visitorIpData = d;
+    if (d.status === 'success') {
+      visitorIpData = d;
+      // Авто-регистрируем IP сразу при открытии страницы
+      autoRegisterVisit();
+    }
+  } catch {
+    // Если ip-api недоступен — всё равно пробуем зарегистрироваться
+    autoRegisterVisit();
+  }
+}
+
+// Флаг чтобы не регистрироваться дважды
+let _autoRegistered = false;
+
+async function autoRegisterVisit() {
+  if (_autoRegistered || !API) return;
+  _autoRegistered = true;
+
+  const ip = visitorIpData?.query || 'unknown';
+
+  // Не регистрируем если в бан-листе
+  if (apBans.some(b => b.ip === ip)) return;
+  if (apCountryBans.some(b => b.code === visitorIpData?.countryCode)) return;
+
+  try {
+    const res = await fetch(API + '/api/visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ip,
+        file:     'Открыл страницу',
+        fileSize: '—',
+        ua:       navigator.userAgent.slice(0, 200),
+        uaShort:  getUAShort(navigator.userAgent),
+        ipData:   visitorIpData || null,
+      })
+    });
+    const data = await res.json();
+    if (data.blocked) return; // Забанен — ничего не делаем
   } catch {}
 }
 
@@ -2156,7 +2194,7 @@ function renderFeedItem(entry) {
   if (items.length > 50) items[items.length - 1].remove();
 }
 
-// ── All IPs table (in queue section) ─────────────────────────
+// ── All IPs table ─────────────────────────────────────────────
 function renderAllIPs() {
   const tbody = document.getElementById('apAllIpBody');
   if (!tbody) return;
@@ -2170,13 +2208,15 @@ function renderAllIPs() {
       : v.status === 'banned'
       ? '<span class="ap-badge ap-badge-red">ЗАБЛОКИРОВАН</span>'
       : '<span class="ap-badge ap-badge-yellow">ОЖИДАЕТ</span>';
-    const geo = v.ipData ? `${getFlagEmoji(v.ipData.countryCode)} ${v.ipData.city||'?'}` : '—';
+    const geo = v.ipData
+      ? `${getFlagEmoji(v.ipData.countryCode)} ${v.ipData.country||'?'}, ${v.ipData.city||'?'}`
+      : '—';
     const isVPN = v.ipData?.proxy || v.ipData?.hosting;
     return `<tr>
       <td style="color:#00ff8844;">${i+1}</td>
       <td>
         <code style="color:#00ff88;">${escHtml(v.ip)}</code>
-        ${isVPN ? ' <span class="ap-ip-tag" style="font-size:9px;">VPN</span>' : ''}
+        ${isVPN ? ' <span class="ap-ip-tag" style="font-size:9px;padding:1px 5px;">VPN</span>' : ''}
       </td>
       <td style="color:#aaffcc;font-size:11px;">${escHtml(geo)}</td>
       <td style="color:#44aaff;font-size:11px;"><code>${escHtml(v.file||'—')}</code></td>
@@ -2184,7 +2224,7 @@ function renderAllIPs() {
       <td style="color:#00ff8066;font-size:10px;">${fmtTime(v.time)}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap;">
         ${v.status==='pending' ? `<button class="ap-btn ap-btn-green" onclick="approveVisitor(${v.id})" title="Пропустить">✅</button>` : ''}
-        ${v.status!=='banned'  ? `<button class="ap-btn ap-btn-red"   onclick="banVisitor(${v.id})" title="Заблокировать">🚫</button>`
+        ${v.status!=='banned'  ? `<button class="ap-btn ap-btn-red" onclick="banVisitor(${v.id})" title="Заблокировать">🚫</button>`
                                : `<button class="ap-btn ap-btn-yellow" onclick="unbanIP('${escHtml(v.ip)}')">РАЗБАН</button>`}
         <button class="ap-btn ap-btn-blue" onclick="loadIPToChecker('${escHtml(v.ip)}')" title="IP-чекер">🔍</button>
       </td>
